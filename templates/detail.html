@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}{{ symbol }} — Stock Tracker{% endblock %}
+
+{% block content %}
+<a href="/" class="btn btn-outline-secondary btn-sm mb-3">&larr; Back to Watchlist</a>
+
+<h2 class="mb-4">{{ symbol }}</h2>
+
+<div class="mb-5">
+    <h5>Daily Close Price</h5>
+    <canvas id="priceChart" height="100"></canvas>
+</div>
+
+<div class="mb-5">
+    <h5>Daily Volume</h5>
+    <canvas id="volumeChart" height="100"></canvas>
+</div>
+
+<p id="loadingMsg" class="text-muted">Loading data...</p>
+<p id="errorMsg" class="text-muted d-none">No data available for {{ symbol }}. The API may be rate-limited — try again later.</p>
+
+<script>
+    fetch("/api/symbols/{{ symbol }}")
+        .then(response => {
+            if (!response.ok) throw new Error("Failed to load data");
+            return response.json();
+        })
+        .then(rawData => {
+            document.getElementById('loadingMsg').classList.add('d-none');
+
+            if (!rawData.length) {
+                document.getElementById('errorMsg').classList.remove('d-none');
+                return;
+            }
+
+            const labels = rawData.map(d => d.date);
+            const closes = rawData.map(d => d.close);
+            const volumes = rawData.map(d => d.volume);
+
+            new Chart(document.getElementById('priceChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Close ($)',
+                        data: closes,
+                        borderColor: 'rgb(54, 162, 235)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 20 } },
+                        y: { beginAtZero: false }
+                    }
+                }
+            });
+
+            new Chart(document.getElementById('volumeChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Volume',
+                        data: volumes,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        borderColor: 'rgb(75, 192, 192)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 20 } },
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        })
+        .catch(() => {
+            document.getElementById('loadingMsg').classList.add('d-none');
+            document.getElementById('errorMsg').classList.remove('d-none');
+        });
+</script>
+{% endblock %}

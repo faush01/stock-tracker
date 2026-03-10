@@ -1,0 +1,225 @@
+import sqlite3
+import os
+from datetime import datetime, timedelta, timezone
+
+import yfinance as yf
+from flask import Flask, g, render_template, request, redirect, url_for, abort, jsonify
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+
+DATABASE = os.path.join(app.root_path, "data", "stocks.db")
+os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
+CACHE_MAX_AGE = timedelta(hours=1)
+
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
+
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DATABASE)
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exc):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    db = get_db()
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS symbols (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS daily_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume INTEGER,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, date)
+        );
+    """)
+    db.commit()
+
+
+with app.app_context():
+    init_db()
+
+
+# ---------------------------------------------------------------------------
+# yfinance helpers
+# ---------------------------------------------------------------------------
+
+def fetch_stock_data(symbol):
+    """Fetch daily time series from Yahoo Finance and cache in SQLite."""
+    print(f"Fetching data for {symbol}...")
+    ticker = yf.Ticker(symbol)
+    df = ticker.history(period="3mo")
+
+    if df.empty:
+        return False
+
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    counter = 0
+    for date, row in df.iterrows():
+        counter += 1
+        db.execute(
+            """INSERT OR REPLACE INTO daily_data
+               (symbol, date, open, high, low, close, volume, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                symbol,
+                date.strftime("%Y-%m-%d"),
+                float(row["Open"]),
+                float(row["High"]),
+                float(row["Low"]),
+                float(row["Close"]),
+                int(row["Volume"]),
+                now,
+            ),
+        )
+    db.commit()
+    print(f"Data for {symbol} fetched and cached, {counter} rows.")
+
+    return True
+
+
+def get_stock_data(symbol):
+    """Return cached daily data, refreshing from API if stale."""
+    db = get_db()
+    row = db.execute(
+        "SELECT fetched_at FROM daily_data WHERE symbol = ? ORDER BY fetched_at DESC LIMIT 1",
+        (symbol,),
+    ).fetchone()
+
+    time_now = datetime.now(timezone.utc)
+    if not row or time_now - datetime.fromisoformat(row["fetched_at"]).replace(tzinfo=timezone.utc) >= CACHE_MAX_AGE:
+        fetch_stock_data(symbol)
+
+    rows = db.execute(
+        "SELECT date, open, high, low, close, volume FROM daily_data WHERE symbol = ? ORDER BY date",
+        (symbol,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/")
+def index():
+    db = get_db()
+    symbols = db.execute("SELECT symbol FROM symbols ORDER BY symbol").fetchall()
+
+    # need to refresh data for all symbols to get latest close prices for change calculations
+    for s in symbols:
+        get_stock_data(s["symbol"])
+
+    # Build per-symbol change dicts keyed by date
+    all_dates = set()
+    raw = {}
+    for s in symbols:
+        sym = s["symbol"]
+        rows = db.execute(
+            "SELECT date, close FROM daily_data WHERE symbol = ? ORDER BY date DESC LIMIT 10",
+            (sym,),
+        ).fetchall()
+        changes = {}
+        for i in range(len(rows) - 1):
+            if i >= 5:
+                break
+            prev_close = rows[i + 1]["close"]
+            cur_close = rows[i]["close"]
+            if prev_close:
+                pct = (cur_close - prev_close) / prev_close * 100
+            else:
+                pct = None
+            changes[rows[i]["date"]] = {"pct": pct, "close": cur_close}
+            all_dates.add(rows[i]["date"])
+        raw[sym] = changes
+
+    # Unified sorted date columns (last 5 days only)
+    dates = sorted(all_dates)[-5:]
+
+    symbol_data = []
+    for s in symbols:
+        sym = s["symbol"]
+        changes = [{"date": d, "pct": raw[sym].get(d, {}).get("pct"), "close": raw[sym].get(d, {}).get("close")} for d in dates]
+        symbol_data.append({"symbol": sym, "changes": changes})
+
+    return render_template("list.html", symbols=symbol_data)
+
+
+@app.route("/symbols", methods=["POST"])
+def add_symbol():
+    symbol = request.form.get("symbol", "").strip().upper()
+    if not symbol or not all(c.isalnum() or c == '.' for c in symbol):
+        return redirect(url_for("index"))
+
+    db = get_db()
+    try:
+        db.execute("INSERT INTO symbols (symbol) VALUES (?)", (symbol,))
+        db.commit()
+    except sqlite3.IntegrityError:
+        pass  # already exists
+
+    # Trigger initial fetch so data is ready when user clicks through
+    fetch_stock_data(symbol)
+
+    return redirect(url_for("index"))
+
+
+@app.route("/symbols/<path:symbol>/delete", methods=["POST"])
+def delete_symbol(symbol):
+    symbol = symbol.upper()
+    db = get_db()
+    db.execute("DELETE FROM symbols WHERE symbol = ?", (symbol,))
+    db.execute("DELETE FROM daily_data WHERE symbol = ?", (symbol,))
+    db.commit()
+    return redirect(url_for("index"))
+
+
+@app.route("/api/symbols/<path:symbol>")
+def api_symbol_data(symbol):
+    symbol = symbol.upper()
+    db = get_db()
+    exists = db.execute("SELECT 1 FROM symbols WHERE symbol = ?", (symbol,)).fetchone()
+    if not exists:
+        abort(404)
+
+    data = get_stock_data(symbol)
+    return jsonify(data)
+
+
+@app.route("/symbols/<path:symbol>")
+def detail(symbol):
+    symbol = symbol.upper()
+    db = get_db()
+    exists = db.execute("SELECT 1 FROM symbols WHERE symbol = ?", (symbol,)).fetchone()
+    if not exists:
+        abort(404)
+
+    return render_template("detail.html", symbol=symbol)
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    app.run(debug=True)
