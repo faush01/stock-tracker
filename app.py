@@ -51,6 +51,13 @@ def init_db():
             fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, date)
         );
+        CREATE TABLE IF NOT EXISTS portfolio (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            shares REAL NOT NULL,
+            price_paid REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     db.commit()
 
@@ -215,6 +222,107 @@ def detail(symbol):
         abort(404)
 
     return render_template("detail.html", symbol=symbol)
+
+
+# ---------------------------------------------------------------------------
+# Portfolio
+# ---------------------------------------------------------------------------
+
+def get_latest_price(symbol):
+    """Return the most recent close price for a symbol, refreshing if stale."""
+    data = get_stock_data(symbol)
+    if data:
+        return data[-1]["close"]
+    return None
+
+
+@app.route("/portfolio")
+def portfolio():
+    db = get_db()
+    entries = db.execute(
+        "SELECT id, symbol, shares, price_paid FROM portfolio ORDER BY symbol, created_at"
+    ).fetchall()
+    entries = [dict(e) for e in entries]
+
+    total_cost = 0.0
+    total_value = 0.0
+    price_cache = {}
+
+    for entry in entries:
+        sym = entry["symbol"]
+        if sym not in price_cache:
+            price_cache[sym] = get_latest_price(sym)
+        current_price = price_cache[sym]
+        entry["current_price"] = current_price
+
+        cost = entry["shares"] * entry["price_paid"]
+        entry["cost"] = cost
+        total_cost += cost
+
+        if current_price is not None:
+            value = entry["shares"] * current_price
+            entry["value"] = value
+            entry["pl"] = value - cost
+            entry["pl_pct"] = (entry["pl"] / cost * 100) if cost else 0
+            total_value += value
+        else:
+            entry["value"] = None
+            entry["pl"] = None
+            entry["pl_pct"] = None
+
+    total_pl = total_value - total_cost
+    total_pl_pct = (total_pl / total_cost * 100) if total_cost else 0
+
+    summary = {
+        "total_cost": total_cost,
+        "total_value": total_value,
+        "total_pl": total_pl,
+        "total_pl_pct": total_pl_pct,
+        "has_data": any(e["current_price"] is not None for e in entries) if entries else False,
+    }
+
+    return render_template("portfolio.html", entries=entries, summary=summary)
+
+
+@app.route("/portfolio", methods=["POST"])
+def add_portfolio_entry():
+    symbol = request.form.get("symbol", "").strip().upper()
+    if not symbol or not all(c.isalnum() or c == '.' for c in symbol):
+        return redirect(url_for("portfolio"))
+
+    try:
+        shares = float(request.form.get("shares", ""))
+        price_paid = float(request.form.get("price_paid", ""))
+    except (ValueError, TypeError):
+        return redirect(url_for("portfolio"))
+
+    if shares <= 0 or price_paid < 0:
+        return redirect(url_for("portfolio"))
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO portfolio (symbol, shares, price_paid) VALUES (?, ?, ?)",
+        (symbol, shares, price_paid),
+    )
+    db.commit()
+
+    # Ensure symbol is tracked so price data is available
+    try:
+        db.execute("INSERT INTO symbols (symbol) VALUES (?)", (symbol,))
+        db.commit()
+        fetch_stock_data(symbol)
+    except sqlite3.IntegrityError:
+        pass
+
+    return redirect(url_for("portfolio"))
+
+
+@app.route("/portfolio/<int:entry_id>/delete", methods=["POST"])
+def delete_portfolio_entry(entry_id):
+    db = get_db()
+    db.execute("DELETE FROM portfolio WHERE id = ?", (entry_id,))
+    db.commit()
+    return redirect(url_for("portfolio"))
 
 
 # ---------------------------------------------------------------------------

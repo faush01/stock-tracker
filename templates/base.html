@@ -13,8 +13,10 @@
 </head>
 <body>
     <div class="container">
-        <nav class="mb-4">
+        <nav class="mb-4 d-flex align-items-center gap-3">
             <a class="text-decoration-none fw-bold fs-4" href="/">Stock Tracker</a>
+            <a class="btn btn-sm btn-outline-secondary" href="/">Watchlist</a>
+            <a class="btn btn-sm btn-outline-secondary" href="/portfolio">Portfolio</a>
         </nav>
         {% block content %}{% endblock %}
     </div>
