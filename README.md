@@ -5,7 +5,7 @@ MSFT
 BHP.AX
 ```
 
-## Run
+## Run Locally
 ```
 python -m venv venv
 
