@@ -152,7 +152,7 @@ def index():
                 break
             prev_close = rows[i + 1]["close"]
             cur_close = rows[i]["close"]
-            if prev_close:
+            if prev_close and cur_close is not None:
                 pct = (cur_close - prev_close) / prev_close * 100
             else:
                 pct = None
