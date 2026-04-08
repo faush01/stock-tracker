@@ -143,7 +143,7 @@ def index():
     for s in symbols:
         sym = s["symbol"]
         rows = db.execute(
-            "SELECT date, close FROM daily_data WHERE symbol = ? ORDER BY date DESC LIMIT 10",
+            "SELECT date, close FROM daily_data WHERE symbol = ? ORDER BY date DESC LIMIT 14",
             (sym,),
         ).fetchall()
         changes = {}
@@ -160,13 +160,21 @@ def index():
             all_dates.add(rows[i]["date"])
         raw[sym] = changes
 
-    # Unified sorted date columns (last 5 days only)
-    dates = sorted(all_dates)[-5:]
+    # Always show the last 7 calendar days, filling in data where available.
+    today = datetime.now().date()
+    dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
 
     symbol_data = []
     for s in symbols:
         sym = s["symbol"]
-        changes = [{"date": d, "pct": raw[sym].get(d, {}).get("pct"), "close": raw[sym].get(d, {}).get("close")} for d in dates]
+        changes = []
+        for d in dates:
+            day_data = raw[sym].get(d, {})
+            changes.append({
+                "date": d,
+                "pct": day_data.get("pct"),
+                "close": day_data.get("close"),
+            })
         symbol_data.append({"symbol": sym, "changes": changes})
 
     return render_template("list.html", symbols=symbol_data)
