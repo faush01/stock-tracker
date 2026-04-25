@@ -24,9 +24,18 @@ The server listens on `http://0.0.0.0:5000`.
 
 ## Build and Run Docker
 ```
-docker build -t stock-tracker-rs .
+docker build -t stock-tracker-rust .
 
-docker run --rm -p 5000:5000 -v stock_data:/app/data stock-tracker-rs
+docker run --rm -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rust stock-tracker-rust
 
-docker run -d -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rs stock-tracker-rs
+docker run -d -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rust stock-tracker-rust
+```
+
+## Pull from GitHub
+```
+docker pull ghcr.io/faush01/stock-tracker-rust:main
+
+docker run --rm -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rust ghcr.io/faush01/stock-tracker-rust:main
+
+docker run -d -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rust ghcr.io/faush01/stock-tracker-rust:main
 ```
