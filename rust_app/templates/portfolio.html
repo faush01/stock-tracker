@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Portfolio — Stock Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Portfolio</h2>
+
+{% if summary.has_data %}
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-1 text-muted">Total Cost</h6>
+                <p class="card-text fs-5 fw-semibold">${{ summary.total_cost|money }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-1 text-muted">Current Value</h6>
+                <p class="card-text fs-5 fw-semibold">${{ summary.total_value|money }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-1 text-muted">Total P/L</h6>
+                <p class="card-text fs-5 fw-semibold {{ 'text-success' if summary.total_pl >= 0 else 'text-danger' }}">
+                    {{ summary.total_pl|signed_money }}
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-1 text-muted">Total P/L %</h6>
+                <p class="card-text fs-5 fw-semibold {{ 'text-success' if summary.total_pl_pct >= 0 else 'text-danger' }}">
+                    {{ summary.total_pl_pct|pct2 }}%
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<h5 class="mb-2">Add Position</h5>
+<form action="/portfolio" method="post" class="row g-2 mb-4 align-items-end" style="max-width: 700px;">
+    <div class="col-auto">
+        <label class="form-label mb-0 small">Symbol</label>
+        <input type="text" name="symbol" class="form-control" placeholder="e.g. AAPL" required
+               pattern="[A-Za-z0-9.]+" title="Letters, numbers and dots only">
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0 small">Shares</label>
+        <input type="number" name="shares" class="form-control" placeholder="10" required
+               min="0.0001" step="any">
+    </div>
+    <div class="col-auto">
+        <label class="form-label mb-0 small">Price Paid</label>
+        <input type="number" name="price_paid" class="form-control" placeholder="150.00" required
+               min="0" step="any">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Add</button>
+    </div>
+</form>
+
+{% if entries %}
+<table class="table table-hover">
+    <thead>
+        <tr>
+            <th>Symbol</th>
+            <th class="text-end">Shares</th>
+            <th class="text-end">Price Paid</th>
+            <th class="text-end">Cost Basis</th>
+            <th class="text-end">Current Price</th>
+            <th class="text-end">Current Value</th>
+            <th class="text-end">P/L</th>
+            <th class="text-end">P/L %</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in entries %}
+        <tr>
+            <td><a href="/symbols/{{ e.symbol }}">{{ e.symbol }}</a></td>
+            <td class="text-end">{{ e.shares }}</td>
+            <td class="text-end">${{ e.price_paid|money }}</td>
+            <td class="text-end">${{ e.cost|money }}</td>
+            <td class="text-end">
+                {% if e.current_price is not none %}${{ e.current_price|money }}{% else %}&mdash;{% endif %}
+            </td>
+            <td class="text-end">
+                {% if e.value is not none %}${{ e.value|money }}{% else %}&mdash;{% endif %}
+            </td>
+            <td class="text-end {% if e.pl is not none %}{{ 'text-success' if e.pl >= 0 else 'text-danger' }}{% endif %}">
+                {% if e.pl is not none %}{{ e.pl|signed_money }}{% else %}&mdash;{% endif %}
+            </td>
+            <td class="text-end {% if e.pl_pct is not none %}{{ 'text-success' if e.pl_pct >= 0 else 'text-danger' }}{% endif %}">
+                {% if e.pl_pct is not none %}{{ e.pl_pct|pct2 }}%{% else %}&mdash;{% endif %}
+            </td>
+            <td class="text-end">
+                <form action="/portfolio/{{ e.id }}/delete" method="post" style="display:inline;">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Remove this entry?');">
+                        &times;
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="text-muted">No positions yet. Use the form above to add your first holding.</p>
+{% endif %}
+{% endblock %}
