@@ -601,6 +601,7 @@ fn fmt_with_thousands(v: f64, decimals: usize, signed: bool) -> String {
 fn build_env() -> Environment<'static> {
     let mut env = Environment::new();
     env.set_loader(minijinja::path_loader("templates"));
+    env.add_global("app_version", Value::from(env!("CARGO_PKG_VERSION")));
 
     // |money -> "1,234.56"
     env.add_filter("money", |v: f64| fmt_with_thousands(v, 2, false));

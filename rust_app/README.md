@@ -37,5 +37,5 @@ docker pull ghcr.io/faush01/stock-tracker-rust:main
 
 docker run --rm -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rust ghcr.io/faush01/stock-tracker-rust:main
 
-docker run -d -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rust ghcr.io/faush01/stock-tracker-rust:main
+docker run -d --restart unless-stopped -p 5000:5000 -v stock_data:/app/data --name stock-tracker-rust ghcr.io/faush01/stock-tracker-rust:main
 ```
