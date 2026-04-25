@@ -1,5 +1,5 @@
 # --- build stage ---
-FROM rust:1.82-slim AS builder
+FROM rust:1.95-slim AS builder
 
 WORKDIR /build
 
@@ -9,14 +9,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Cache deps
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs && \
-    cargo build --release && \
+    cargo build --release --locked && \
     rm -rf src target/release/deps/stock_tracker* target/release/stock-tracker*
 
 COPY src ./src
 COPY templates ./templates
-RUN cargo build --release
+RUN cargo build --release --locked
 
 # --- runtime stage ---
 FROM debian:bookworm-slim
