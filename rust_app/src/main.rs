@@ -656,6 +656,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(middleware::from_fn(log_requests))
         .with_state(state);
 
+    println!("stock-tracker (Rust) v{} starting", env!("CARGO_PKG_VERSION"));
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 5000));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("Listening on http://{}", addr);
