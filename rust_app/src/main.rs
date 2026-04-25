@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Form, Path, State},
+    extract::{Form, Path, Request, State},
     http::StatusCode,
+    middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
@@ -652,6 +653,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/symbols/:symbol", get(api_symbol_data))
         .route("/portfolio", get(portfolio).post(add_portfolio_entry))
         .route("/portfolio/:id/delete", post(delete_portfolio_entry))
+        .layer(middleware::from_fn(log_requests))
         .with_state(state);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 5000));
@@ -659,4 +661,9 @@ async fn main() -> anyhow::Result<()> {
     println!("Listening on http://{}", addr);
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn log_requests(req: Request, next: Next) -> Response {
+    println!("{} {}", req.method(), req.uri().path());
+    next.run(req).await
 }
